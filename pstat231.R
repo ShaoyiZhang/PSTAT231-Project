@@ -10,7 +10,7 @@ kobe[,game_id:=NULL]
 kobe[,game_event_id:=NULL]
 kobe[,team_id:=NULL]
 kobe[,team_name:=NULL]
-kobe[,shot_id:=NULL]
+#kobe[,shot_id:=NULL]
 kobe[,seconds:=minutes_remaining*60+seconds_remaining,by=1:nrow(kobe)]
 kobe[,minutes_remaining:=NULL]
 kobe[,seconds_remaining:=NULL]
@@ -25,6 +25,23 @@ kobe[opponent=="VAN",opponent:="MEM"]
 kobe[opponent=="SEA",opponent:="OKC"]  
 kobe[opponent=="NJN",opponent:="BKN"] 
 
+kobe[]
+table(kobe$action_type)
+as.vector(table(kobe$action_type))
+as.factor(table(kobe$action_type))
+
+# check if we need action_type
+action.fit = lm(data = kobe, shot_made_flag~action_type)
+summary(action.fit)
+combine.fit = lm(data = kobe,shot_made_flag~combined_shot_type)
+summary(combine.fit)
+
+action.glm = glm(data = kobe, shot_made_flag~action_type)
+summary(action.glm)
+combine.glm = glm(data = kobe,shot_made_flag~combined_shot_type)
+summary(combine.glm)
+# action_type is important
+
 # try delete action type
 kobe[,action_type:=NULL]
 
@@ -36,11 +53,17 @@ corr = corrplot(cor(kobe.keep))
 kobe[,loc_y:=NULL]
 str(kobe)
 
+# try decision tree
+library(rpart)
+orig.tree = rpart(data = kobe,formula = shot_made_flag~.-shot_id,na.action = NULL,control=rpart.control(minsplit=30, cp=0.001))
+plot(orig.tree)
+text(orig.tree)
+table(kobe$combined_shot_type)
+# Bank shot and Dunk are good
 
 
-
+kobe[]
 str(kobe)
-table(kobe$action_type)
 
 library(tree)
 kobe$home
