@@ -3,21 +3,52 @@ library(data.table)
 kobe = data.table(read.csv("kobe.csv"))
 
 kobe$game_date = as.Date(kobe$game_date, "%Y-%m-%d")
-head(kobe$game_date)
+# no latitude and longitude
+kobe[,lon:=NULL]
+kobe[,lat:=NULL]
+kobe[,game_id:=NULL]
+kobe[,game_event_id:=NULL]
+kobe[,team_id:=NULL]
+kobe[,team_name:=NULL]
+kobe[,shot_id:=NULL]
+kobe[,seconds:=minutes_remaining*60+seconds_remaining,by=1:nrow(kobe)]
+kobe[,minutes_remaining:=NULL]
+kobe[,seconds_remaining:=NULL]
+# get rid of mininutes_remaining
+# going to replace matchup
 kobe[,home:=1]
 kobe[substr(matchup,5,5)=='@',home:=0]
 kobe[,matchup:=NULL]
+# some teams changed their names or locations
+kobe[opponent=="NOH",opponent:="NOP"]
+kobe[opponent=="VAN",opponent:="MEM"]  
+kobe[opponent=="SEA",opponent:="OKC"]  
+kobe[opponent=="NJN",opponent:="BKN"] 
+
+# try delete action type
+kobe[,action_type:=NULL]
+
+# watch for the correlation between loc_x/loc_y with shot zone/shot distance
+library(corrplot)
+kobe.keep = kobe[,c("period","shot_distance","loc_x","loc_y","playoffs"),with=F]
+corr = corrplot(cor(kobe.keep))
+# shot distance has a high correlation between loc_y
+kobe[,loc_y:=NULL]
+str(kobe)
+
+
+
+
+str(kobe)
+table(kobe$action_type)
+
 library(tree)
 kobe$home
 summary(kobe)
 
 kobe = kobe[,lat:=NULL]
 kobe = kobe[,lon:=NULL]
-kobe[opponent=="NOH",opponent:="NOP"]
-kobe[]
-kobe$opponent[opponent=="VAN":="MEM"]  
-kobe$opponent[kobe$opponent=="SEA":="OKC"]  
-kobe$opponent[kobe$opponent=="NJN":="BKN"] 
+
 # NOH = NOP
 # VAN = MEM
 # SEA = OKC
@@ -30,7 +61,7 @@ str(kobe1)
 kobe
 #orig.tree = rpart(data = kobe1,formula = shot_made_flag~.-opponent-action_type,na.action = NULL)
 #table(kobe$com)
-#kobe.keep = kobe[,c("period","shot_zone_area","shot_made_flag",""),with=F]
+#
 
 orig.tree = rpart(data = kobe,formula = shot_made_flag~.,na.action = NULL,control=rpart.control(minsplit=30, cp=0.001))
 
@@ -41,9 +72,17 @@ text(orig.tree)
 
 
 library(randomForest)
-tree.random = randomForest(formula = as.factor(shot_made_flag)~.-(matchup+action_type),na.action = NULL,data=kobe)
-tree.random
+tree.random = randomForest(formula = as.factor(shot_made_flag)~.-(matchup+action_type+game_event_id+team_id+team_name+lat+lon),na.action = NULL,data=kobe)
+varImpPlot(tree.random)
 str(kobe)
+table(kobe$action_type)
+
+
+
+#install.packages("corrplot")
+library(corrplot)
+
+
 
 
 head(kobe.keep$shot_zone_area)
