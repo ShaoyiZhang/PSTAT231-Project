@@ -25,10 +25,21 @@ kobe[opponent=="VAN",opponent:="MEM"]
 kobe[opponent=="SEA",opponent:="OKC"]  
 kobe[opponent=="NJN",opponent:="BKN"] 
 
-kobe[]
+freqTable = data.table(action_types = levels(kobe$action_type),frequency = as.vector(table(kobe$action_type)))
+freqTable =  freqTable[frequency>=20]
+freqTable
+kobe[,type:=combined_shot_type,by=1:nrow(kobe)]
+kobe[action_type %in% freqTable$action_types,type:=action_type, by=1:nrow(kobe)]
+str(kobe)
+levels(kobe$type)
+#kobe[is.null(action_type)]
+for (i in 0:nrow(kobe)){
+  if kobe[i]$
+}
 table(kobe$action_type)
-as.vector(table(kobe$action_type))
-as.factor(table(kobe$action_type))
+
+
+#as.factor(table(kobe$action_type))
 
 # check if we need action_type
 action.fit = lm(data = kobe, shot_made_flag~action_type)
