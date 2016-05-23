@@ -25,21 +25,12 @@ kobe[opponent=="VAN",opponent:="MEM"]
 kobe[opponent=="SEA",opponent:="OKC"]  
 kobe[opponent=="NJN",opponent:="BKN"] 
 
-freqTable = data.table(action_types = levels(kobe$action_type),frequency = as.vector(table(kobe$action_type)))
-freqTable =  freqTable[frequency>=20]
-freqTable
-kobe[,type:=combined_shot_type,by=1:nrow(kobe)]
-kobe[action_type %in% freqTable$action_types,type:=action_type, by=1:nrow(kobe)]
-str(kobe)
-levels(kobe$type)
-#kobe[is.null(action_type)]
-for (i in 0:nrow(kobe)){
-  if kobe[i]$
-}
-table(kobe$action_type)
-
-
-#as.factor(table(kobe$action_type))
+# watch for the correlation between loc_x/loc_y with shot zone/shot distance
+library(corrplot)
+kobe.keep = kobe[,c("period","shot_distance","loc_x","loc_y","playoffs"),with=F]
+corr = corrplot(cor(kobe.keep))
+# shot distance has a high correlation between loc_y
+kobe[,loc_y:=NULL]
 
 # check if we need action_type
 action.fit = lm(data = kobe, shot_made_flag~action_type)
@@ -53,15 +44,19 @@ combine.glm = glm(data = kobe,shot_made_flag~combined_shot_type)
 summary(combine.glm)
 # action_type is important
 
-# try delete action type
-kobe[,action_type:=NULL]
+freqTable = data.table(action_types = levels(kobe$action_type),frequency = as.vector(table(kobe$action_type)))
+freqTable =  freqTable[frequency>=50]
+freqTable
+kobe[,type:=combined_shot_type,by=1:nrow(kobe)]
+kobe[action_type %in% freqTable$action_types,type:=action_type]#, by=1:nrow(kobe)]
+str(kobe)
+levels(kobe$type)
 
-# watch for the correlation between loc_x/loc_y with shot zone/shot distance
-library(corrplot)
-kobe.keep = kobe[,c("period","shot_distance","loc_x","loc_y","playoffs"),with=F]
-corr = corrplot(cor(kobe.keep))
-# shot distance has a high correlation between loc_y
-kobe[,loc_y:=NULL]
+# delete action type
+kobe[,action_type:=NULL]
+kobe[,combined_shot_type:=NULL]
+
+
 str(kobe)
 
 # try decision tree
@@ -69,11 +64,15 @@ library(rpart)
 orig.tree = rpart(data = kobe,formula = shot_made_flag~.-shot_id,na.action = NULL,control=rpart.control(minsplit=30, cp=0.001))
 plot(orig.tree)
 text(orig.tree)
-table(kobe$combined_shot_type)
-# Bank shot and Dunk are good
+
+# try random forrest
+library(randomForest)
+kobe.rf = randomForest(formula=shot_made_flag~.-shot_id,na.action=NULL,data = kobe)
+varImpPlot(kobe.rf)
 
 
-kobe[]
+
+
 str(kobe)
 
 library(tree)
