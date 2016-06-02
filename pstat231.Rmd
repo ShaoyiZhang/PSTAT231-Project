@@ -1,40 +1,55 @@
+---
+title: "pstat 231"
+output: pdf_document
+---
+```{r global_options, include=FALSE,warning=F}
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+
+```{r}
 setwd("/Users/Shawn/Desktop/PSTAT231-Project")
-set.seed(3)
-library(data.table)
+set.seed(1)
 
 # import data
+library(data.table)
 kobe = data.table(read.csv("kobe.csv"))
 kobe = kobe[complete.cases(kobe),]
 
+# randomly partition data into training set and test set
 test.index = sample(seq_len(nrow(kobe)), size = floor(nrow(kobe)*0.1),replace = F)
 train.index = setdiff(seq_len(nrow(kobe)),test.index)
 
-shot.season=aggregate(shot_made_flag~season, data, length) # number of shots made per season
+shot.season=aggregate(shot_made_flag~season, kobe, length) # number of shots made per season
 plot(shot.season,xlab="Season",ylab="Number of attempted field goals", main="Frequency of Attempts")
 
-season.avg=aggregate(shot_made_flag~season,data[!is.na(shot_made_flag),],mean) # goal percentage per season
+season.avg=aggregate(shot_made_flag~season,kobe,mean) # goal percentage per season
 plot(season.avg,xlab="Season",ylab="Field goal percentage", main="Percentage of Shots Made")
 
-
-
-kobe = kobe[complete.cases(kobe),]
+# transform data to type date
 kobe$game_date = as.Date(kobe$game_date, "%Y-%m-%d")
+
 # latitude and longitude are obviously useless
+# game_id, game_event_id,team_id,team_name also useless
 kobe[,lon:=NULL]
 kobe[,lat:=NULL]
 kobe[,game_id:=NULL]
 kobe[,game_event_id:=NULL]
 kobe[,team_id:=NULL]
 kobe[,team_name:=NULL]
+
+# combine minuetes remaining and seconds remaining
 kobe[,seconds:=minutes_remaining*60+seconds_remaining,by=1:nrow(kobe)]
 kobe[,minutes_remaining:=NULL]
 kobe[,seconds_remaining:=NULL]
-# get rid of mininutes_remaining
-# going to replace matchup
+
+# replace matchup with binary variable "home"
 kobe[,home:=1]
 kobe[substr(matchup,5,5)=='@',home:=0]
 kobe[,matchup:=NULL]
+
 # some teams changed their names or locations
+# we need combine old names and new names
 kobe[opponent=="NOH",opponent:="NOP"]
 kobe[opponent=="VAN",opponent:="MEM"]  
 kobe[opponent=="SEA",opponent:="OKC"]  
@@ -46,39 +61,35 @@ kobe$opponent = delevels(kobe$opponent, c("NOH","VAN","SEA","NJN"), label = NULL
 # library(corrplot)
 # kobe.keep = kobe[,c("period","shot_distance","loc_x","loc_y","playoffs"),with=F]
 # corr = corrplot(cor(kobe.keep))
-# # shot distance has a high correlation between loc_y
-#kobe[,loc_y:=NULL]
-
-
+# shot distance has a high correlation between loc_y
+# kobe[,loc_y:=NULL]
+# but it doesn't effect our model very much
 
 # check if we need action_type
-action.fit = lm(data = kobe, shot_made_flag~action_type)
-summary(action.fit)
-combine.fit = lm(data = kobe,shot_made_flag~combined_shot_type)
-summary(combine.fit)
-
 action.glm = glm(data = kobe, shot_made_flag~action_type)
-summary(action.glm)
+# summary(action.glm) output too long -> hide
 combine.glm = glm(data = kobe,shot_made_flag~combined_shot_type)
-summary(combine.glm)
-# not all action type are statistically significant
+# summary(combine.glm) output too long -> hide
 
-# action_type is important
+# not all action type are statistically significant
+# we will replace action_type with combined_type
+# if specific action_type is infrequent compared to others
 
 freqTable = data.table(action_types = levels(kobe$action_type),frequency = as.vector(table(kobe$action_type)))
 freqTable =  freqTable[frequency>=50]
 freqTable
 kobe[,type:=combined_shot_type,by=1:nrow(kobe)]
-kobe[action_type %in% freqTable$action_types,type:=action_type]#, by=1:nrow(kobe)]
-str(kobe)
-levels(kobe$type)
+kobe[action_type %in% freqTable$action_types,type:=action_type]
 
-# delete action type
+# now we have these levels in our new varible "type"
+#levels(kobe$type)
+
+# delete action_type and combined_type
 kobe[,action_type:=NULL]
 kobe[,combined_shot_type:=NULL]
 ######################### data cleaning complete ###############################
 
-# contigency table
+# use chi-square test to see if these "distance/location variable" are independent
 tbl1 = table(kobe$shot_type,kobe$shot_zone_area)
 chi1 = chisq.test(tbl1,correct = F)
 chi1
@@ -90,94 +101,68 @@ chi2
 tbl3 = table(kobe$shot_type,kobe$shot_zone_area)
 chi3 = chisq.test(tbl3,correct = F)
 chi3
+# as expected they are highly dependent
+# we will eventually drop them in the following procedure
 
-
-#head(kobe$shot_zone_area)
-
-# try boxplot to see correlation between categorical variables
-#box.shot_type = ggplot(data = kobe, aes(x = shot_type, y = shot_made_flag))+geom_boxplot()
-#box.shot_type
-#str(kobe)
-# try decision tree
+# decision tree
 library(rpart)
 orig.tree = rpart(data = kobe,formula = shot_made_flag~.-shot_id,na.action = NULL,control=rpart.control(minsplit=30, cp=0.001))
 plot(orig.tree)
 text(orig.tree)
-summary(orig.tree)
-# try random forrest
+# interesting fact: Kobe shot poorly at the last 2.5 seconds
+
+# random forrest
 library(randomForest)
 kobe.rf = randomForest(formula=as.factor(shot_made_flag)~.-shot_id,na.action=NULL,data = kobe,ntree=500)
-imptplot = varImpPlot(kobe.rf,main="Random Forest Variable Importance Plot")+abline(v = 450)
-imptplot
+imptplot = varImpPlot(kobe.rf)
 imptplot = as.data.table(imptplot,keep.rownames = T)
-str(as.data.frame(imptplot))
-
 impt.sort = setorder(imptplot, cols = "MeanDecreaseGini")
-#impt.sort
+
 # Important variables:
 # opponent, type, seconds, loc_x, game_date, season, shot_distance, period
-#1,2,3,5,6,7,12,13,14,15,17
+# 1,2,3,5,6,7,12,13,14,15,17  index of variable
 col.keep = c(impt.sort$rn[7:15],"shot_made_flag","shot_id")
-colnames(kobe)
 kobe.keep = subset(kobe,select = col.keep)
-
-colnames(kobe.keep)
-head(kobe.keep)
 
 # actuall prediction 
 test = kobe.keep[test.index,]
 train = kobe.keep[train.index,]
 
-
+# redo random forrest on training data
 keep.rf = randomForest(formula=as.factor(shot_made_flag)~.-shot_id,na.action=NULL,data = train,ntree=500)
-imptplot = varImpPlot(keep.rf,main = "Random Forest Variable Importance Plot")
-imptplot
+imptplot = varImpPlot(keep.rf)
+#imptplot
 
-rand.pred = predict(keep.rf,test,type="class")
-rand.conti.table = table(rand.pred,test$shot_made_flag)
-rf.error.rate = (rand.conti.table[3] + rand.conti.table[2])/nrow(test)
-rf.error.rate
 
+
+# random forrest prediction on training data
 rand.train = predict(keep.rf,train,type="class")
 rand.train.table = table(rand.train,train$shot_made_flag)
 rf.train.error = (rand.train.table[3] + rand.train.table[2])/nrow(train)
 rf.train.error
 
-glm.fit = glm(data = train, shot_made_flag~.-shot_id,family = binomial)#(link = "logit"))
+# random forrest prediction on test data
+rand.test = predict(keep.rf,test,type="class")
+rand.conti.table = table(rand.test,test$shot_made_flag)
+rf.error.rate = (rand.conti.table[3] + rand.conti.table[2])/nrow(test)
+rf.error.rate
+
+glm.fit = glm(data = train, shot_made_flag~.-shot_id,family = binomial)
+glm.fit
+
+# logistic regresssion prediciton on training data
+glm.probs.train = predict(glm.fit,train,type="response")
+glm.pred.train = rep("Shot fail",nrow(train))
+glm.pred.train[glm.probs.train>0.5]="Shot Made"
+glm.conti.table.train = table(glm.pred.train,train$shot_made_flag)
+glm.error.rate.train = (glm.conti.table.train[3] + glm.conti.table.train[2])/nrow(train)
+glm.error.rate.train
+
+# logistic regression prediction on testing data
 glm.probs = predict(glm.fit,test,type="response")
 glm.pred=rep("Shot fail",nrow(test))
 glm.pred[glm.probs>0.5]="Shot Made"
 glm.conti.table = table(glm.pred,test$shot_made_flag)
 glm.error.rate = (glm.conti.table[3] + glm.conti.table[2])/nrow(test)
 glm.error.rate
-glm.fit
-
-glm.probs.train = predict(glm.fit,train,type="response")
-str(glm.probs.train)
-glm.pred.train = rep("Shot fail",nrow(train))
-glm.pred.train[glm.probs.train>0.5]="Shot Made"
-glm.conti.table.train = table(glm.pred.train,train$shot_made_flag)
-glm.error.rate.train = (glm.conti.table.train[3] + glm.conti.table.train[2])/nrow(train)
-glm.error.rate
-
-#c(1996-97,1997-98,1998-99,1999-00,2000-01,2001-02,2002-03,2003-04,2004-05,2005-06,2006-07,2007-08,2008-09,2009-10,2010-11,2011-12,2012-12,2013-14,2015-16)
-#library(boot)
-#cost<-function(y,pi=0) {mean(abs(y - pi)>0.5)}
-#cvglm = cv.glm(train,glm.fit,cost)
-salary = data.table(
-  year=c("1996-97","1997-98","1998-99","1999-00","2000-01","2001-02","2002-03","2003-04","2004-05","2005-06","2006-07","2007-08","2008-09","2009-10","2010-11","2011-12","2012-12","2013-14","2014-15","2015-16"),
-  salary=c(1015000,1167240,1319000,9000000,10130000,11250000,12375000,13500000,14175000,15946875,17718750,19490625,21262500,23034375,24806250,25244493,27849149,30453805,23500000,25000000)
-)
-#colnames("year","salary")
-library(ggplot2)
-#plot(salary$salary)
-#qplot(data=salary,aes(x=salary$V1,y=salary$V2))
-ggplot(salary)+geom_line(aes(x=salary$V1,y=salary$V2), color="Red")
-ggplot() + aes(salary$V2)+ geom_histogram(binwidth=1, colour="black", fill="white")
-#ggplot(data=salary)+aes(x=V1,y=V2)
-str(salary)
-#areer: $328,238,062
-
-str(train)
-
-# junk b
+```
